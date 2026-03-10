@@ -1,0 +1,6 @@
+/loglint
+/loglint.exe
+/custom-gcl
+/custom-gcl.exe
+*.exe
+.DS_Store
