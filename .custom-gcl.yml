@@ -1,0 +1,6 @@
+version: v2.11.0
+
+plugins:
+  - module: github.com/pppestto/test_assignment_linter
+    path: .
+    import: github.com/pppestto/test_assignment_linter/linters

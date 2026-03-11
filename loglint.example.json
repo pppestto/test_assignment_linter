@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "lowercase": true,
+    "english": true,
+    "emoji": true,
+    "sensitive": true
+  },
+  "sensitive_keywords": ["password", "token", "secret"],
+  "sensitive_patterns": [
+    "api[_-]?key",
+    "bearer\\s+"
+  ]
+}

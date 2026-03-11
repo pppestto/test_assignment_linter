@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - loglint
+
+  settings:
+    custom:
+      loglint:
+        type: module
+        description: Checks log/slog message format (lowercase, english, no emoji/special chars, sensitive content).
+        original-url: github.com/pppestto/test_assignment_linter
