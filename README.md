@@ -1,6 +1,19 @@
 # test_assignment_linter
 
-Линтер для проверки лог-сообщений в **log/slog** и **go.uber.org/zap**: строчная первая буква, только ASCII (английский), без спецсимволов/эмодзи (только буквы, цифры, пробелы), без утечки чувствительных данных через конкатенацию с переменной.
+Линтер для проверки **первого строкового аргумента** в вызовах **log/slog** и **go.uber.org/zap** (Info, Error, Debug, Warn и т.д.):
+
+| Правило | Суть |
+|--------|------|
+| **Lowercase** | Сообщение с маленькой буквы |
+| **English** | Только ASCII (латиница, цифры, пунктуация ASCII — но см. следующее) |
+| **Emoji** | По ТЗ допускаются только **буквы, цифры и пробелы**; всё остальное (эмодзи, `!`, `…`, кириллица и т.д.) — нарушение |
+| **Sensitive** | Нет утечки через конкатенацию: `"token: " + token` режется на переменной; статическая строка `"token validated"` — ок |
+
+Конфиг JSON (`-config`), чувствительные ключевые слова и regexp-паттерны — см. `loglint.example.json`. Поддерживается `-fix` (правки в духе lowercase и вычищения «лишних» символов по правилам ТЗ).
+
+**Go:** в CI прогоняется на **1.22+**; локально нужен Go не ниже `go` из `go.mod`.
+
+---
 
 ## Сборка и запуск
 
@@ -11,46 +24,50 @@ go build -o loglint ./cmd/loglint
 go test ./... -count=1
 ```
 
-С конфигом (бонусы): `./loglint -config=loglint.example.json ./...`  
-С автофиксом: `./loglint -fix ./...`
+- С конфигом: `./loglint -config=loglint.example.json ./...`
+- С автофиксом: `./loglint -fix ./...`
 
-## Примеры (соответствие ТЗ)
+Без сборки:
 
-| Правило | Неправильно | Правильно |
-|--------|-------------|-----------|
-| Строчная буква | `slog.Error("Failed...")` | `slog.Error("failed...")` |
-| Английский | `slog.Info("запуск...")` | `slog.Info("starting...")` |
-| Без спецсимволов | `"failed!!!"`, `"bad!"` | `"connection failed"`, буквы/пробелы только |
-| Чувствительные | `"token: " + token` | `"token validated"` |
-
-Интеграция с **golangci-lint** — см. ниже и `docs/GOLANGCI-LINT.md`.
+```bash
+go run ./cmd/loglint ./...
+```
 
 ---
 
-# Интеграция с golangci-lint (этап 4)
+## Примеры (соответствие правилам)
 
-Линтер реализован как `go/analysis.Analyzer` и подключается к golangci-lint через **Module Plugin System** (рекомендуемый способ для приватных линтеров).
+| Правило | Неправильно | Правильно |
+|--------|-------------|-----------|
+| Строчная буква | `slog.Error("Failed to connect")` | `slog.Error("failed to connect")` |
+| Только ASCII / латиница | `slog.Info("запуск сервиса")` | `slog.Info("service starting")` |
+| Только буквы, цифры, пробелы | `"failed!!!"`, `"ok 👍"`, `"cost: $10"` | `"connection failed"`, `"ok"`, `"cost 10 dollars"` |
+| Чувствительные данные | `"token: " + token` | `"token validated"` или литерал без конкатенации с секретом |
 
-## Что нужно
+---
 
-- Установленный `golangci-lint` (команда `golangci-lint custom` входит в стандартную поставку).
+## Интеграция с golangci-lint
+
+Линтер — `go/analysis.Analyzer` с именем `loglint`, подключается через **Module Plugin System** (`golangci-lint custom`).
+
+### Требования
+
+- Установленный `golangci-lint` (команда `golangci-lint custom` в стандартной поставке).
 - Git, Go.
 
-## Установка (automatic way)
+### 1. `.custom-gcl.yml`
 
-### 1. Файл `.custom-gcl.yml`
+В корне репозитория уже есть `.custom-gcl.yml`: указан модуль и импорт пакета `linters`, в `init()` вызывается `register.Plugin("loglint", ...)`.
 
-В корне **этого** репозитория уже лежит `.custom-gcl.yml`: в нём указан локальный модуль и импорт пакета `linters`, где в `init()` вызывается `register.Plugin("loglint", ...)`.
+Если клонируешь в другое место — поправь `path:` на каталог с `go.mod` этого модуля.
 
-Если клонируешь линтер в другое место — поправь `path:` на каталог с `go.mod` линтера.
-
-Версия `version:` в `.custom-gcl.yml` должна совпадать с версией golangci-lint, которой собираешь custom-бинарник. Проверить свою версию:
+**Важно:** поле `version:` должно **совпадать** с версией твоего `golangci-lint` (иначе сборка custom-бинарника может не совпасть по API).
 
 ```bash
 golangci-lint version
 ```
 
-При необходимости замени `version: v2.1.0` в `.custom-gcl.yml` на свою.
+Подставь выводимую версию в `version:` в `.custom-gcl.yml` (в репозитории сейчас задано значение-пример — замени на своё).
 
 ### 2. Сборка custom-бинарника
 
@@ -60,53 +77,37 @@ golangci-lint version
 golangci-lint custom
 ```
 
-По умолчанию появится `./custom-gcl` (Windows: `custom-gcl.exe`). Дальше в CI и локально вызывай **этот** бинарник вместо обычного `golangci-lint`.
+По умолчанию появится бинарник в текущей директории (часто `custom-gcl` / на Windows `custom-gcl.exe`). Имя и путь можно задать в `.custom-gcl.yml` (`name`, `destination`).
 
-Имя и путь выхода можно задать в `.custom-gcl.yml` (`name`, `destination`).
+### 3. Конфиг проверяемого проекта
 
-### 3. Конфиг проекта
-
-В **проверяемом** проекте положи `.golangci.yml` (или дополни существующий). Минимальный пример — см. `.golangci.example.yml` в репозитории линтера:
+В **целевом** проекте в `.golangci.yml` (или аналоге) нужно включить кастомный линтер. Минимальный пример — **`.golangci.example.yml`** в этом репозитории:
 
 - `linters.enable` содержит `loglint`
 - `linters.settings.custom.loglint.type: module`
 
-Без `default: none` custom-линтеры тоже участвуют в прогоне; если везде отключено всё кроме списка — добавь `loglint` в `enable`.
+Если используешь `default: none` — не забудь добавить `loglint` в `enable`.
 
 ### 4. Запуск
 
 ```bash
 ./custom-gcl run ./...
-```
-
-Или с явным включением:
-
-```bash
+# или явно:
 ./custom-gcl run -E loglint ./...
 ```
 
-Флаг `-config` анализатора (JSON) при использовании через golangci-lint задаётся через `settings` custom-секции — см. доку golangci-lint по custom linters; при необходимости можно расширить плагин и читать `register.DecodeSettings` в `New()`.
-
-## Альтернатива: только бинарник loglint
-
-Без custom-сборки можно по-прежнему использовать:
-
-```bash
-go run github.com/pppestto/test_assignment_linter/cmd/loglint@latest ./...
-# или
-go build -o loglint ./cmd/loglint && ./loglint ./...
-```
-
-Плагин golangci-lint нужен, если хочется один прогон со всеми линтерами и единый `.golangci.yml`.
-
-## Структура плагина
-
-| Файл / пакет | Назначение |
-|--------------|------------|
-| `linters/plugin.go` | `register.Plugin("loglint", New)`, `BuildAnalyzers` → `addcheck.Analyzer`, `LoadModeTypesInfo` |
-| `addcheck/` | Сам анализатор и правила |
+Передача JSON-конфига анализатора (`-config`) при запуске через golangci-lint настраивается в секции `settings` для custom-линтера; при необходимости плагин можно расширить (например, `register.DecodeSettings` в `New()`).
 
 ---
 
+## Только бинарник, без custom-сборки
 
+```bash
+go run github.com/pppestto/test_assignment_linter/cmd/loglint@latest ./...
+# или после go build:
+./loglint ./...
+```
 
+Custom-плагин нужен, если хочешь один прогон со всеми линтерами и единый `.golangci.yml`.
+
+---
